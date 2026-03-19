@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // ✅ MongoDB Atlas Connection
-mongoose.connect("mongodb+srv://ankit:ankit123@cluster0.pxjzgk5.mongodb.net/warrantyDB")
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.log(err));
 
