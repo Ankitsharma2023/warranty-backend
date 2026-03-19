@@ -6,10 +6,14 @@ const XLSX = require("xlsx");
 const Product = require("./models/Product");
 
 const app = express();
-app.use(cors());
+
+// ✅ Middleware
+app.use(cors({
+  origin: "*"
+}));
 app.use(express.json());
 
-// ✅ MongoDB Atlas Connection
+// ✅ MongoDB (Render ENV)
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.log(err));
@@ -46,7 +50,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       const endDate = new Date(today);
       endDate.setFullYear(today.getFullYear() + duration);
 
-      // ✅ Upsert (no duplicates)
+      // ✅ Upsert (avoid duplicates)
       await Product.updateOne(
         { serialNumber: serial },
         {
@@ -98,7 +102,15 @@ app.get("/product/:serial", async (req, res) => {
 });
 
 
-// 🚀 Start Server
-app.listen(5000, () => {
-  console.log("Server running on port 5000");
+// 🧪 Health Check Route (IMPORTANT for Render)
+app.get("/", (req, res) => {
+  res.send("Backend is running 🚀");
+});
+
+
+// 🚀 Start Server (Render requires PORT)
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
