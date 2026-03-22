@@ -1,12 +1,12 @@
 // ═══════════════════════════════════════════════
 //  VERSION 3 — dates stored as DD-MM-YYYY strings
 // ═══════════════════════════════════════════════
-const express  = require("express");
+const express = require("express");
 const mongoose = require("mongoose");
-const cors     = require("cors");
-const multer   = require("multer");
-const XLSX     = require("xlsx");
-const Product  = require("./models/Product");
+const cors = require("cors");
+const multer = require("multer");
+const XLSX = require("xlsx");
+const Product = require("./models/Product");
 
 require("dotenv").config();
 
@@ -25,19 +25,21 @@ const upload = multer({ dest: "uploads/" });
 
 // ─── Helpers ──────────────────────────────────────────────────
 function normalizeKey(key) {
-  return String(key).toLowerCase().replace(/[\s_\-]/g, "");
+  return String(key)
+    .toLowerCase()
+    .replace(/[\s_\-]/g, "");
 }
 
 const COL_MAP = {
-  serialnumber:     "serialNumber",
-  serial:           "serialNumber",
-  productname:      "productName",
-  product:          "productName",
+  serialnumber: "serialNumber",
+  serial: "serialNumber",
+  productname: "productName",
+  product: "productName",
   warrantyduration: "warrantyDuration",
-  duration:         "warrantyDuration",
-  warranty:         "warrantyDuration",
-  startdate:        "startDate",
-  start:            "startDate",
+  duration: "warrantyDuration",
+  warranty: "warrantyDuration",
+  startdate: "startDate",
+  start: "startDate",
 };
 
 function mapRow(rawRow) {
@@ -93,8 +95,8 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).send("No file uploaded");
 
     // cellDates:false → dates always come as formatted strings
-    const wb      = XLSX.readFile(req.file.path, { cellDates: false });
-    const ws      = wb.Sheets[wb.SheetNames[0]];
+    const wb = XLSX.readFile(req.file.path, { cellDates: false });
+    const ws = wb.Sheets[wb.SheetNames[0]];
     const rawData = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
     const today = new Date();
@@ -104,29 +106,61 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     let skippedCount = 0;
     const errors = [];
 
-    // ── Duplicate serial check within the file ──
+    // ── Collect all valid serials from this file ──
     const seen = {};
+    const allSerials = [];
     for (const r of rawData) {
-      const sn = String(mapRow(r).serialNumber || "").trim();
-      if (sn) seen[sn] = (seen[sn] || 0) + 1;
+      const row = mapRow(r);
+      const sn = String(row.serialNumber || "").trim();
+      // Skip completely empty rows
+      if (!sn && !row.productName && !row.warrantyDuration) continue;
+      if (sn) {
+        seen[sn] = (seen[sn] || 0) + 1;
+        allSerials.push(sn);
+      }
     }
-    const dupes = Object.entries(seen).filter(([, c]) => c > 1).map(([s]) => s);
-    if (dupes.length) {
+
+    // ── Check 1: Duplicate serials WITHIN the file ──
+    const dupesInFile = Object.entries(seen)
+      .filter(([, c]) => c > 1)
+      .map(([s]) => s);
+    if (dupesInFile.length) {
       return res.status(400).json({
-        message:          "Upload rejected — duplicate serial numbers in file",
-        duplicates:       dupes,
+        message: "Upload rejected — duplicate serial numbers within the file",
+        duplicates: dupesInFile,
         recordsProcessed: 0,
-        skipped:          rawData.length,
-        errors:           dupes.map((s) => `"${s}" appears ${seen[s]} times`),
+        skipped: rawData.length,
+        errors: dupesInFile.map(
+          (s) => `"${s}" appears ${seen[s]} times in this file`,
+        ),
+      });
+    }
+
+    // ── Check 2: Serials that ALREADY EXIST in the database ──
+    const existingInDB = await Product.find(
+      { serialNumber: { $in: allSerials } },
+      { serialNumber: 1, _id: 0 },
+    );
+    if (existingInDB.length > 0) {
+      const existingSerials = existingInDB.map((p) => p.serialNumber);
+      return res.status(400).json({
+        message:
+          "Upload rejected — serial numbers already exist in the database",
+        duplicates: existingSerials,
+        recordsProcessed: 0,
+        skipped: rawData.length,
+        errors: existingSerials.map(
+          (s) => `"${s}" already exists in the database`,
+        ),
       });
     }
 
     // ── Process each row ──
     for (const [i, rawRow] of rawData.entries()) {
-      const rowNum   = i + 2;
-      const row      = mapRow(rawRow);
-      const serial   = row.serialNumber ? String(row.serialNumber).trim() : null;
-      const name     = row.productName  ? String(row.productName).trim()  : null;
+      const rowNum = i + 2;
+      const row = mapRow(rawRow);
+      const serial = row.serialNumber ? String(row.serialNumber).trim() : null;
+      const name = row.productName ? String(row.productName).trim() : null;
       const duration = Number(row.warrantyDuration);
 
       // Missing fields
@@ -139,7 +173,9 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       // Duration must be 5 or 10
       if (![5, 10].includes(duration)) {
         skippedCount++;
-        errors.push(`Row ${rowNum} ("${serial}"): duration must be 5 or 10, got "${row.warrantyDuration}"`);
+        errors.push(
+          `Row ${rowNum} ("${serial}"): duration must be 5 or 10, got "${row.warrantyDuration}"`,
+        );
         continue;
       }
 
@@ -152,7 +188,9 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       // No future dates
       if (startDate > today) {
         skippedCount++;
-        errors.push(`Row ${rowNum} ("${serial}"): start date ${startStr} is in the future — skipped`);
+        errors.push(
+          `Row ${rowNum} ("${serial}"): start date ${startStr} is in the future — skipped`,
+        );
         continue;
       }
 
@@ -166,26 +204,25 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         { serialNumber: serial },
         {
           $set: {
-            serialNumber:     serial,
-            productName:      name,
+            serialNumber: serial,
+            productName: name,
             warrantyDuration: duration,
-            startDate:        startStr,
-            endDate:          endStr,
+            startDate: startStr,
+            endDate: endStr,
           },
         },
-        { upsert: true }
+        { upsert: true },
       );
 
       successCount++;
     }
 
     res.json({
-      message:          "Upload complete",
+      message: "Upload complete",
       recordsProcessed: successCount,
-      skipped:          skippedCount,
+      skipped: skippedCount,
       errors,
     });
-
   } catch (err) {
     console.error("Upload error:", err);
     res.status(500).send("Error processing file");
@@ -206,7 +243,12 @@ app.get("/product/:serial", async (req, res) => {
       if (!val) return null;
       if (val instanceof Date && !isNaN(val)) {
         return new Date(
-          Date.UTC(val.getUTCFullYear(), val.getUTCMonth(), val.getUTCDate(), 12)
+          Date.UTC(
+            val.getUTCFullYear(),
+            val.getUTCMonth(),
+            val.getUTCDate(),
+            12,
+          ),
         ).toISOString();
       }
       const str = String(val).trim();
@@ -218,7 +260,12 @@ app.get("/product/:serial", async (req, res) => {
       const iso = new Date(str);
       if (!isNaN(iso)) {
         return new Date(
-          Date.UTC(iso.getUTCFullYear(), iso.getUTCMonth(), iso.getUTCDate(), 12)
+          Date.UTC(
+            iso.getUTCFullYear(),
+            iso.getUTCMonth(),
+            iso.getUTCDate(),
+            12,
+          ),
         ).toISOString();
       }
       return null;
@@ -233,14 +280,13 @@ app.get("/product/:serial", async (req, res) => {
     }
 
     res.json({
-      productName:        product.productName,
-      warrantyDuration:   product.warrantyDuration,
-      startDate:          toSafeISO(product.startDate),
-      endDate:            toSafeISO(product.endDate),
+      productName: product.productName,
+      warrantyDuration: product.warrantyDuration,
+      startDate: toSafeISO(product.startDate),
+      endDate: toSafeISO(product.endDate),
       startDateFormatted: toDisplay(product.startDate),
-      endDateFormatted:   toDisplay(product.endDate),
+      endDateFormatted: toDisplay(product.endDate),
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).send("Error fetching product");
@@ -252,15 +298,15 @@ app.get("/products", async (req, res) => {
   try {
     const products = await Product.find(
       {},
-      { _id: 0, __v: 0, createdAt: 0, updatedAt: 0 }
+      { _id: 0, __v: 0, createdAt: 0, updatedAt: 0 },
     ).sort({ serialNumber: 1 });
 
     const data = products.map((p) => ({
-      serialNumber:     p.serialNumber,
-      productName:      p.productName,
+      serialNumber: p.serialNumber,
+      productName: p.productName,
       warrantyDuration: p.warrantyDuration,
-      startDate:        p.startDate,
-      endDate:          p.endDate,
+      startDate: p.startDate,
+      endDate: p.endDate,
     }));
 
     res.json({ total: data.length, products: data });
