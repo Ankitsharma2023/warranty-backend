@@ -179,22 +179,27 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         continue;
       }
 
-      // Parse start date — empty/invalid → today
-      let startDate = parseDate(row.startDate);
-      if (!startDate || isNaN(startDate)) startDate = new Date();
-      startDate.setHours(0, 0, 0, 0);
-      const startStr = fmtDMY(startDate);
+      // Parse purchase/install date — empty/invalid → today
+      let purchaseDate = parseDate(row.startDate);
+      if (!purchaseDate || isNaN(purchaseDate)) purchaseDate = new Date();
+      purchaseDate.setHours(0, 0, 0, 0);
 
-      // No future dates
-      if (startDate > today) {
+      // Reject future purchase dates
+      if (purchaseDate > today) {
         skippedCount++;
         errors.push(
-          `Row ${rowNum} ("${serial}"): start date ${startStr} is in the future — skipped`,
+          `Row ${rowNum} ("${serial}"): start date ${fmtDMY(purchaseDate)} is in the future — skipped`,
         );
         continue;
       }
 
-      // Calculate end date
+      // Warranty activates 2 months after the purchase/install date
+      const startDate = new Date(purchaseDate);
+      startDate.setMonth(startDate.getMonth() + 2);
+      startDate.setHours(0, 0, 0, 0);
+      const startStr = fmtDMY(startDate);
+
+      // Calculate end date (from warranty start, not purchase date)
       const endDate = new Date(startDate);
       endDate.setFullYear(startDate.getFullYear() + duration);
       const endStr = fmtDMY(endDate);
