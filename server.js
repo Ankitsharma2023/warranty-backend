@@ -321,6 +321,32 @@ app.get("/products", async (req, res) => {
   }
 });
 
+
+async function deleteProductBySerial(req, res) {
+  try {
+    const serial = String(req.params.serial || "").trim();
+    if (!serial) {
+      return res.status(400).json({ message: "Serial number is required" });
+    }
+
+    const deleted = await Product.findOneAndDelete({ serialNumber: serial });
+    if (!deleted) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    res.json({
+      message: "Product deleted successfully",
+      serialNumber: deleted.serialNumber,
+    });
+  } catch (err) {
+    console.error("Delete product error:", err);
+    res.status(500).json({ message: "Error deleting product" });
+  }
+}
+
+app.delete("/products/:serial", deleteProductBySerial);
+app.delete("/product/:serial", deleteProductBySerial);
+
 // ─── Health Check ─────────────────────────────────────────────
 app.get("/", (_, res) => res.send("Backend is running 🚀"));
 
