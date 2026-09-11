@@ -16,7 +16,7 @@ const productSchema = new mongoose.Schema(
     warrantyDuration: {
       type:     Number,
       required: true,
-      enum:     [3, 5, 10],       // only 3, 5 or 10 allowed at DB level too
+      enum:     [5, 10],          // only 5 or 10 allowed at DB level too
     },
     // Stored as "DD-MM-YYYY" string — e.g. "21-03-2026"
     startDate: {

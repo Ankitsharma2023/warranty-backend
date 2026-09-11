@@ -170,11 +170,11 @@ app.post("/upload", upload.single("file"), async (req, res) => {
         continue;
       }
 
-      // Duration must be 3, 5 or 10
-      if (![3, 5, 10].includes(duration)) {
+      // Duration must be 5 or 10
+      if (![5, 10].includes(duration)) {
         skippedCount++;
         errors.push(
-          `Row ${rowNum} ("${serial}"): duration must be 3, 5 or 10, got "${row.warrantyDuration}"`,
+          `Row ${rowNum} ("${serial}"): duration must be 5 or 10, got "${row.warrantyDuration}"`,
         );
         continue;
       }
